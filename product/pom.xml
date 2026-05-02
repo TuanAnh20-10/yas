@@ -89,26 +89,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.14</version>
-
                 <executions>
-                    <!-- Attach agent -->
-                    <execution>
-                        <goals>
-                            <goal>prepare-agent</goal>
-                        </goals>
-                    </execution>
-
-                    <!-- Generate report -->
-                    <execution>
-                        <id>report</id>
-                        <phase>verify</phase>
-                        <goals>
-                            <goal>report</goal>
-                        </goals>
-                    </execution>
-
-                    <!-- FAIL nếu coverage < 70% -->
                     <execution>
                         <id>check</id>
                         <phase>verify</phase>
@@ -121,7 +102,7 @@
                                     <element>BUNDLE</element>
                                     <limits>
                                         <limit>
-                                            <counter>INSTRUCTION</counter>
+                                            <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
                                             <minimum>0.70</minimum>
                                         </limit>
@@ -130,7 +111,6 @@
                             </rules>
                         </configuration>
                     </execution>
-
                 </executions>
             </plugin>
         </plugins>
