@@ -16,11 +16,11 @@ import com.yas.product.viewmodel.producttemplate.ProductAttributeTemplatePostVm;
 import com.yas.product.viewmodel.producttemplate.ProductTemplateListGetVm;
 import com.yas.product.viewmodel.producttemplate.ProductTemplatePostVm;
 import com.yas.product.viewmodel.producttemplate.ProductTemplateVm;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest(classes = ProductApplication.class)
+@Transactional
 class ProductTemplateServiceTest {
     ProductAttribute productAttribute1;
     ProductAttribute productAttribute2;
@@ -74,13 +75,6 @@ class ProductTemplateServiceTest {
                 .build();
         productAttributeTemplateRepository.saveAll(
                 List.of(productAttributeTemplate1, productAttributeTemplate2));
-    }
-
-    @AfterEach
-    void tearDown() {
-        productAttributeTemplateRepository.deleteAll();
-        productAttributeRepository.deleteAll();
-        productTemplateRepository.deleteAll();
     }
 
     @Test
@@ -147,6 +141,51 @@ class ProductTemplateServiceTest {
                 List.of(new ProductAttributeTemplatePostVm(productAttribute1.getId(), 0)));
         NotFoundException exception = assertThrows(NotFoundException.class, () -> productTemplateService.updateProductTemplate(9999L, productTemplatePostVm));
         assertEquals(Constants.ErrorCode.PRODUCT_TEMPlATE_IS_NOT_FOUND, exception.getMessage());
+    }
+
+    @Test
+    void updateProductTemplate_WhenValidData_ThenSuccess() {
+        ProductTemplate productTemplateDB = productTemplateRepository.findAll().getFirst();
+        ProductTemplatePostVm productTemplatePostVm = new ProductTemplatePostVm(
+                "updated-template",
+                List.of(new ProductAttributeTemplatePostVm(productAttribute2.getId(), 2))
+        );
+
+        productTemplateService.updateProductTemplate(productTemplateDB.getId(), productTemplatePostVm);
+
+        ProductTemplateVm actualResponse = productTemplateService.getProductTemplate(productTemplateDB.getId());
+        assertEquals("updated-template", actualResponse.name());
+        assertEquals(1, actualResponse.productAttributeTemplates().size());
+        assertEquals(productAttribute2.getId(),
+                actualResponse.productAttributeTemplates().getFirst().productAttribute().id());
+    }
+
+    @Test
+    void updateProductTemplate_WhenSomeProductAttributesNotFound_ThenThrowBadRequestException() {
+        ProductTemplate productTemplateDB = productTemplateRepository.findAll().getFirst();
+        ProductTemplatePostVm productTemplatePostVm = new ProductTemplatePostVm(
+                "updated-template",
+                List.of(
+                        new ProductAttributeTemplatePostVm(productAttribute1.getId(), 0),
+                        new ProductAttributeTemplatePostVm(9999L, 1)
+                )
+        );
+
+        BadRequestException exception = assertThrows(BadRequestException.class,
+                () -> productTemplateService.updateProductTemplate(productTemplateDB.getId(), productTemplatePostVm));
+
+        assertThat(exception.getMessage()).isEqualTo(Constants.ErrorCode.PRODUCT_ATTRIBUTE_NOT_FOUND);
+    }
+
+    @Test
+    void saveProductTemplate_WhenNoAttributes_ThenSuccess() {
+        ProductTemplatePostVm productTemplatePostVm = new ProductTemplatePostVm("template-without-attributes",
+                List.of());
+
+        ProductTemplateVm actualResponse = productTemplateService.saveProductTemplate(productTemplatePostVm);
+
+        assertEquals("template-without-attributes", actualResponse.name());
+        assertTrue(actualResponse.productAttributeTemplates().isEmpty());
     }
 
 }
