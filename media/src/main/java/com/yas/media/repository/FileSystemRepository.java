@@ -68,7 +68,7 @@ public class FileSystemRepository {
         }
     }
 
-    private void checkPermissions(File directory) {
+    protected void checkPermissions(File directory) {
         if (!directory.canRead() || !directory.canWrite()) {
             throw new IllegalStateException("Directory " + directory.getAbsolutePath() + " is not accessible.");
         }
