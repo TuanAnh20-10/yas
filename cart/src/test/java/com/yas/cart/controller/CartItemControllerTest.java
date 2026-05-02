@@ -246,5 +246,191 @@ class CartItemControllerTest {
 
             verify(cartItemService).deleteCartItem(PRODUCT_ID_SAMPLE);
         }
+
+        @Test
+        void testDeleteCartItem_withDifferentProductId_shouldReturnNoContent() throws Exception {
+            Long differentProductId = 999L;
+            doNothing().when(cartItemService).deleteCartItem(differentProductId);
+
+            mockMvc.perform(delete("/storefront/cart/items/" + differentProductId))
+                .andExpect(status().isNoContent());
+
+            verify(cartItemService).deleteCartItem(differentProductId);
+        }
+    }
+
+    @Nested
+    class GetCartItemsEdgeCasesTest {
+
+        @Test
+        void testGetCartItems_whenEmptyCart_shouldReturnEmptyList() throws Exception {
+            when(cartItemService.getCartItems()).thenReturn(List.of());
+
+            mockMvc.perform(get("/storefront/cart/items"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$").isEmpty());
+
+            verify(cartItemService).getCartItems();
+        }
+
+        @Test
+        void testGetCartItems_whenMultipleItems_shouldReturnAllItems() throws Exception {
+            List<CartItemGetVm> cartItems = List.of(
+                CartItemGetVm.builder().productId(1L).quantity(1).customerId(CUSTOMER_ID_SAMPLE).build(),
+                CartItemGetVm.builder().productId(2L).quantity(2).customerId(CUSTOMER_ID_SAMPLE).build(),
+                CartItemGetVm.builder().productId(3L).quantity(3).customerId(CUSTOMER_ID_SAMPLE).build()
+            );
+
+            when(cartItemService.getCartItems()).thenReturn(cartItems);
+
+            mockMvc.perform(get("/storefront/cart/items"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[0].productId").value(1))
+                .andExpect(jsonPath("$[1].productId").value(2))
+                .andExpect(jsonPath("$[2].productId").value(3));
+
+            verify(cartItemService).getCartItems();
+        }
+    }
+
+    @Nested
+    class DeleteOrAdjustCartItemEdgeCasesTest {
+
+        @Test
+        void testDeleteOrAdjustCartItem_withMultipleItems_shouldReturnAllRemainingItems() throws Exception {
+            List<CartItemDeleteVm> deleteVms = List.of(
+                new CartItemDeleteVm(1L, 1),
+                new CartItemDeleteVm(2L, 1)
+            );
+            List<CartItemGetVm> remainingItems = List.of(
+                CartItemGetVm.builder().productId(3L).quantity(2).customerId(CUSTOMER_ID_SAMPLE).build()
+            );
+
+            when(cartItemService.deleteOrAdjustCartItem(anyList())).thenReturn(remainingItems);
+
+            mockMvc.perform(buildDeleteOrAdjustCartItemRequest(deleteVms.get(0)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1));
+
+            verify(cartItemService).deleteOrAdjustCartItem(anyList());
+        }
+
+        @Test
+        void testDeleteOrAdjustCartItem_withProductIdNull_shouldReturnBadRequest() throws Exception {
+            CartItemDeleteVm cartItemDeleteVm = new CartItemDeleteVm(null, 1);
+
+            mockMvc.perform(buildDeleteOrAdjustCartItemRequest(cartItemDeleteVm))
+                .andExpect(status().isBadRequest());
+        }
+
+        private MockHttpServletRequestBuilder buildDeleteOrAdjustCartItemRequest(CartItemDeleteVm cartItemDeleteVm)
+            throws Exception {
+            return post("/storefront/cart/items/remove")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(List.of(cartItemDeleteVm)));
+        }
+    }
+
+    @Nested
+    class UpdateCartItemEdgeCasesTest {
+
+        @Test
+        void testUpdateCartItem_withLargeQuantity_shouldReturnOk() throws Exception {
+            CartItemPutVm cartItemPutVm = new CartItemPutVm(1000);
+            CartItemGetVm expectedCartItemGetVm = CartItemGetVm.builder()
+                .productId(PRODUCT_ID_SAMPLE)
+                .quantity(1000)
+                .customerId(CUSTOMER_ID_SAMPLE)
+                .build();
+
+            when(cartItemService.updateCartItem(anyLong(), any())).thenReturn(expectedCartItemGetVm);
+
+            mockMvc.perform(buildUpdateCartItemRequest(PRODUCT_ID_SAMPLE, cartItemPutVm))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quantity").value(1000));
+
+            verify(cartItemService).updateCartItem(anyLong(), any());
+        }
+
+        @Test
+        void testUpdateCartItem_withQuantityOne_shouldReturnOk() throws Exception {
+            CartItemPutVm cartItemPutVm = new CartItemPutVm(1);
+            CartItemGetVm expectedCartItemGetVm = CartItemGetVm.builder()
+                .productId(PRODUCT_ID_SAMPLE)
+                .quantity(1)
+                .customerId(CUSTOMER_ID_SAMPLE)
+                .build();
+
+            when(cartItemService.updateCartItem(anyLong(), any())).thenReturn(expectedCartItemGetVm);
+
+            mockMvc.perform(buildUpdateCartItemRequest(PRODUCT_ID_SAMPLE, cartItemPutVm))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quantity").value(1));
+
+            verify(cartItemService).updateCartItem(anyLong(), any());
+        }
+
+        private MockHttpServletRequestBuilder buildUpdateCartItemRequest(Long productId, CartItemPutVm cartItemPutVm)
+            throws Exception {
+            return put("/storefront/cart/items/" + productId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(cartItemPutVm));
+        }
+    }
+
+    @Nested
+    class AddToCartEdgeCasesTest {
+
+        @Test
+        void testAddToCart_withLargeQuantity_shouldReturnOk() throws Exception {
+            CartItemPostVm cartItemPostVm = CartItemPostVm.builder()
+                .productId(PRODUCT_ID_SAMPLE)
+                .quantity(500)
+                .build();
+            CartItemGetVm expectedCartItem = CartItemGetVm.builder()
+                .productId(cartItemPostVm.productId())
+                .quantity(cartItemPostVm.quantity())
+                .customerId(CUSTOMER_ID_SAMPLE)
+                .build();
+
+            when(cartItemService.addCartItem(cartItemPostVm)).thenReturn(expectedCartItem);
+
+            mockMvc.perform(buildAddCartItemRequest(cartItemPostVm))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quantity").value(500));
+
+            verify(cartItemService).addCartItem(cartItemPostVm);
+        }
+
+        @Test
+        void testAddToCart_withQuantityOne_shouldReturnOk() throws Exception {
+            CartItemPostVm cartItemPostVm = CartItemPostVm.builder()
+                .productId(PRODUCT_ID_SAMPLE)
+                .quantity(1)
+                .build();
+            CartItemGetVm expectedCartItem = CartItemGetVm.builder()
+                .productId(cartItemPostVm.productId())
+                .quantity(cartItemPostVm.quantity())
+                .customerId(CUSTOMER_ID_SAMPLE)
+                .build();
+
+            when(cartItemService.addCartItem(cartItemPostVm)).thenReturn(expectedCartItem);
+
+            mockMvc.perform(buildAddCartItemRequest(cartItemPostVm))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quantity").value(1));
+
+            verify(cartItemService).addCartItem(cartItemPostVm);
+        }
+
+        private MockHttpServletRequestBuilder buildAddCartItemRequest(CartItemPostVm cartItemPostVm)
+            throws Exception {
+            return post("/storefront/cart/items")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(cartItemPostVm));
+        }
     }
 }

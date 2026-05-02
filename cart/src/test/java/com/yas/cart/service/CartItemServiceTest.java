@@ -249,6 +249,145 @@ class CartItemServiceTest {
         }
     }
 
+    @Nested
+    class DeleteCartItemTest {
+
+        @Test
+        void testDeleteCartItem_shouldCallRepository() {
+            mockCurrentUserId(CURRENT_USER_ID_SAMPLE);
+
+            cartItemService.deleteCartItem(PRODUCT_ID_SAMPLE);
+
+            verify(cartItemRepository).deleteByCustomerIdAndProductId(CURRENT_USER_ID_SAMPLE, PRODUCT_ID_SAMPLE);
+        }
+
+        @Test
+        void testDeleteCartItem_withDifferentProductId_shouldCallRepositoryWithCorrectId() {
+            Long differentProductId = 999L;
+            mockCurrentUserId(CURRENT_USER_ID_SAMPLE);
+
+            cartItemService.deleteCartItem(differentProductId);
+
+            verify(cartItemRepository).deleteByCustomerIdAndProductId(CURRENT_USER_ID_SAMPLE, differentProductId);
+        }
+
+        @Test
+        void testDeleteCartItem_withDifferentUserId_shouldCallRepositoryWithCorrectUserId() {
+            String differentUserId = "differentUserId";
+            mockCurrentUserId(differentUserId);
+
+            cartItemService.deleteCartItem(PRODUCT_ID_SAMPLE);
+
+            verify(cartItemRepository).deleteByCustomerIdAndProductId(differentUserId, PRODUCT_ID_SAMPLE);
+        }
+    }
+
+    @Nested
+    class EdgeCasesTest {
+
+        @Test
+        void testGetCartItems_whenMultipleItemsExist_shouldReturnAllItems() {
+            List<CartItem> cartItems = List.of(
+                CartItem.builder().customerId(CURRENT_USER_ID_SAMPLE).productId(1L).quantity(1).build(),
+                CartItem.builder().customerId(CURRENT_USER_ID_SAMPLE).productId(2L).quantity(2).build(),
+                CartItem.builder().customerId(CURRENT_USER_ID_SAMPLE).productId(3L).quantity(3).build()
+            );
+
+            mockCurrentUserId(CURRENT_USER_ID_SAMPLE);
+            when(cartItemRepository.findByCustomerIdOrderByCreatedOnDesc(CURRENT_USER_ID_SAMPLE))
+                .thenReturn(cartItems);
+
+            List<CartItemGetVm> result = cartItemService.getCartItems();
+
+            assertEquals(3, result.size());
+            verify(cartItemRepository).findByCustomerIdOrderByCreatedOnDesc(CURRENT_USER_ID_SAMPLE);
+        }
+
+        @Test
+        void testGetCartItems_whenEmptyCart_shouldReturnEmptyList() {
+            mockCurrentUserId(CURRENT_USER_ID_SAMPLE);
+            when(cartItemRepository.findByCustomerIdOrderByCreatedOnDesc(CURRENT_USER_ID_SAMPLE))
+                .thenReturn(List.of());
+
+            List<CartItemGetVm> result = cartItemService.getCartItems();
+
+            assertEquals(0, result.size());
+        }
+
+        @Test
+        void testAddCartItem_withLargeQuantity_shouldCreateCartItemWithLargeQuantity() {
+            CartItemPostVm cartItemPostVm = CartItemPostVm.builder()
+                .productId(PRODUCT_ID_SAMPLE)
+                .quantity(1000)
+                .build();
+
+            mockCurrentUserId(CURRENT_USER_ID_SAMPLE);
+            when(productService.existsById(cartItemPostVm.productId())).thenReturn(true);
+            when(cartItemRepository.findByCustomerIdAndProductId(anyString(), anyLong())).thenReturn(
+                java.util.Optional.empty());
+            when(cartItemRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+            CartItemGetVm result = cartItemService.addCartItem(cartItemPostVm);
+
+            assertEquals(1000, result.quantity());
+        }
+
+        @Test
+        void testUpdateCartItem_withLargeQuantity_shouldUpdateToLargeQuantity() {
+            CartItemPutVm cartItemPutVm = new CartItemPutVm(500);
+
+            mockCurrentUserId(CURRENT_USER_ID_SAMPLE);
+            when(productService.existsById(PRODUCT_ID_SAMPLE)).thenReturn(true);
+            when(cartItemRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+            CartItemGetVm result = cartItemService.updateCartItem(PRODUCT_ID_SAMPLE, cartItemPutVm);
+
+            assertEquals(500, result.quantity());
+        }
+
+        @Test
+        void testDeleteOrAdjustCartItem_whenCartItemNotFound_shouldNotThrowException() {
+            CartItemDeleteVm cartItemDeleteVm = new CartItemDeleteVm(PRODUCT_ID_SAMPLE, 1);
+
+            mockCurrentUserId(CURRENT_USER_ID_SAMPLE);
+            when(cartItemRepository.findByCustomerIdAndProductIdIn(any(), any())).thenReturn(List.of());
+
+            List<CartItemGetVm> result = cartItemService.deleteOrAdjustCartItem(List.of(cartItemDeleteVm));
+
+            assertEquals(0, result.size());
+        }
+
+        @Test
+        void testDeleteOrAdjustCartItem_whenMultipleItemsToDelete_shouldHandleCorrectly() {
+            CartItem existingCartItem1 = CartItem.builder()
+                .customerId(CURRENT_USER_ID_SAMPLE)
+                .productId(1L)
+                .quantity(1)
+                .build();
+            CartItem existingCartItem2 = CartItem.builder()
+                .customerId(CURRENT_USER_ID_SAMPLE)
+                .productId(2L)
+                .quantity(5)
+                .build();
+
+            CartItemDeleteVm cartItemDeleteVm1 = new CartItemDeleteVm(1L, 1);
+            CartItemDeleteVm cartItemDeleteVm2 = new CartItemDeleteVm(2L, 2);
+
+            List<CartItemDeleteVm> cartItemDeleteVms = List.of(cartItemDeleteVm1, cartItemDeleteVm2);
+
+            mockCurrentUserId(CURRENT_USER_ID_SAMPLE);
+            when(cartItemRepository.findByCustomerIdAndProductIdIn(any(), any()))
+                .thenReturn(List.of(existingCartItem1, existingCartItem2));
+            when(cartItemRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+            List<CartItemGetVm> result = cartItemService.deleteOrAdjustCartItem(cartItemDeleteVms);
+
+            verify(cartItemRepository).deleteAll(List.of(existingCartItem1));
+            assertEquals(1, result.size());
+            assertEquals(3, result.get(0).quantity());
+        }
+    }
+
     private void mockCurrentUserId(String userIdToMock) {
         Jwt jwt = mock(Jwt.class);
         JwtAuthenticationToken jwtToken = new JwtAuthenticationToken(jwt);
