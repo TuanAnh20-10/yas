@@ -10,7 +10,6 @@ pipeline {
         PRODUCT_MODULE = 'product'
         MEDIA_MODULE = 'media'
 
-        // ====== SONAR ======
         SONAR_PROJECT_KEY = 'yas_project'
         SONAR_HOST_URL = 'https://everglade-starfish-fable.ngrok-free.dev/'
     }
@@ -23,9 +22,19 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
+                deleteDir()
                 checkout scm
                 sh 'git fetch --all || true'
                 sh 'chmod +x mvnw || true'
+            }
+        }
+
+        stage('Verify Build Environment') {
+            steps {
+                sh '''
+                    java -version
+                    ./mvnw -version
+                '''
             }
         }
 
@@ -52,6 +61,7 @@ pipeline {
                     }
 
                     if (changedFiles.contains('Jenkinsfile') ||
+                        changedFiles.contains('jenkinsfile') ||
                         changedFiles.contains('pom.xml') ||
                         changedFiles.contains('mvnw') ||
                         changedFiles.contains('.mvn/')) {
@@ -75,7 +85,7 @@ pipeline {
                     if command -v gitleaks >/dev/null 2>&1; then
                         gitleaks protect --source . -v
                     else
-                        echo "ERROR: gitleaks chưa được cài trên Jenkins node"
+                        echo "ERROR: gitleaks chua duoc cai tren Jenkins node"
                         exit 1
                     fi
                 '''
@@ -89,11 +99,12 @@ pipeline {
                         expression { env.RUN_CART == 'true' }
                     }
                     steps {
-                        sh "./mvnw -f ./pom.xml -pl ${CART_MODULE} -am clean test"
-                    }
-                    post {
-                        always {
+                        ws("${env.WORKSPACE}@test-cart") {
+                            checkout scm
+                            sh 'chmod +x mvnw || true'
+                            sh "./mvnw -f ./pom.xml -pl ${CART_MODULE} -am test"
                             junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                            archiveArtifacts artifacts: '**/target/site/**, **/target/jacoco*.exec', allowEmptyArchive: true
                         }
                     }
                 }
@@ -103,11 +114,12 @@ pipeline {
                         expression { env.RUN_PRODUCT == 'true' }
                     }
                     steps {
-                        sh "./mvnw -f ./pom.xml -pl ${PRODUCT_MODULE} -am clean test"
-                    }
-                    post {
-                        always {
+                        ws("${env.WORKSPACE}@test-product") {
+                            checkout scm
+                            sh 'chmod +x mvnw || true'
+                            sh "./mvnw -f ./pom.xml -pl ${PRODUCT_MODULE} -am test"
                             junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                            archiveArtifacts artifacts: '**/target/site/**, **/target/jacoco*.exec', allowEmptyArchive: true
                         }
                     }
                 }
@@ -117,11 +129,12 @@ pipeline {
                         expression { env.RUN_MEDIA == 'true' }
                     }
                     steps {
-                        sh "./mvnw -f ./pom.xml -pl ${MEDIA_MODULE} -am clean test"
-                    }
-                    post {
-                        always {
+                        ws("${env.WORKSPACE}@test-media") {
+                            checkout scm
+                            sh 'chmod +x mvnw || true'
+                            sh "./mvnw -f ./pom.xml -pl ${MEDIA_MODULE} -am test"
                             junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                            archiveArtifacts artifacts: '**/target/site/**, **/target/jacoco*.exec', allowEmptyArchive: true
                         }
                     }
                 }
@@ -132,7 +145,18 @@ pipeline {
             steps {
                 sh '''
                     echo "Checking JaCoCo reports..."
-                    find . -type f | grep -E 'jacoco.*xml|jacoco.*csv|jacoco.*html' || true
+
+                    if [ "${RUN_CART}" = "true" ]; then
+                      find "${WORKSPACE}@test-cart" -type f | grep -E 'jacoco.*xml|jacoco.*csv|jacoco.*html' || true
+                    fi
+
+                    if [ "${RUN_PRODUCT}" = "true" ]; then
+                      find "${WORKSPACE}@test-product" -type f | grep -E 'jacoco.*xml|jacoco.*csv|jacoco.*html' || true
+                    fi
+
+                    if [ "${RUN_MEDIA}" = "true" ]; then
+                      find "${WORKSPACE}@test-media" -type f | grep -E 'jacoco.*xml|jacoco.*csv|jacoco.*html' || true
+                    fi
                 '''
             }
         }
@@ -141,7 +165,7 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     sh '''
-                        ./mvnw -f ./pom.xml clean verify sonar:sonar \
+                        ./mvnw -f ./pom.xml verify sonar:sonar \
                           -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                           -Dsonar.host.url=${SONAR_HOST_URL} \
                           -Dsonar.login=${SONAR_TOKEN}
@@ -157,7 +181,12 @@ pipeline {
                         expression { env.RUN_CART == 'true' }
                     }
                     steps {
-                        sh "./mvnw -f ./pom.xml -pl ${CART_MODULE} -am clean package -DskipTests"
+                        ws("${env.WORKSPACE}@build-cart") {
+                            checkout scm
+                            sh 'chmod +x mvnw || true'
+                            sh "./mvnw -f ./pom.xml -pl ${CART_MODULE} -am package -DskipTests"
+                            archiveArtifacts artifacts: '**/target/*.jar', allowEmptyArchive: true
+                        }
                     }
                 }
 
@@ -166,7 +195,12 @@ pipeline {
                         expression { env.RUN_PRODUCT == 'true' }
                     }
                     steps {
-                        sh "./mvnw -f ./pom.xml -pl ${PRODUCT_MODULE} -am clean package -DskipTests"
+                        ws("${env.WORKSPACE}@build-product") {
+                            checkout scm
+                            sh 'chmod +x mvnw || true'
+                            sh "./mvnw -f ./pom.xml -pl ${PRODUCT_MODULE} -am package -DskipTests"
+                            archiveArtifacts artifacts: '**/target/*.jar', allowEmptyArchive: true
+                        }
                     }
                 }
 
@@ -175,7 +209,12 @@ pipeline {
                         expression { env.RUN_MEDIA == 'true' }
                     }
                     steps {
-                        sh "./mvnw -f ./pom.xml -pl ${MEDIA_MODULE} -am clean package -DskipTests"
+                        ws("${env.WORKSPACE}@build-media") {
+                            checkout scm
+                            sh 'chmod +x mvnw || true'
+                            sh "./mvnw -f ./pom.xml -pl ${MEDIA_MODULE} -am package -DskipTests"
+                            archiveArtifacts artifacts: '**/target/*.jar', allowEmptyArchive: true
+                        }
                     }
                 }
             }
@@ -183,9 +222,6 @@ pipeline {
     }
 
     post {
-        always {
-            archiveArtifacts artifacts: '**/target/*.jar, **/target/surefire-reports/*.xml, **/target/site/**', allowEmptyArchive: true
-        }
         success {
             echo 'Pipeline SUCCESS'
         }
