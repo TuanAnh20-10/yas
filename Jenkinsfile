@@ -164,12 +164,34 @@ pipeline {
         stage('SonarQube Scan') {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                    sh '''
-                        ./mvnw -f ./pom.xml verify sonar:sonar \
-                          -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                          -Dsonar.host.url=${SONAR_HOST_URL} \
-                          -Dsonar.login=${SONAR_TOKEN}
-                    '''
+                    script {
+                        if (env.RUN_CART == 'true') {
+                            sh """
+                                ./mvnw -f ./pom.xml -pl ${CART_MODULE} -am sonar:sonar \
+                                  -Dsonar.projectKey=yas_cart \
+                                  -Dsonar.host.url=${SONAR_HOST_URL} \
+                                  -Dsonar.login=${SONAR_TOKEN}
+                            """
+                        }
+
+                        if (env.RUN_PRODUCT == 'true') {
+                            sh """
+                                ./mvnw -f ./pom.xml -pl ${PRODUCT_MODULE} -am sonar:sonar \
+                                  -Dsonar.projectKey=yas_product \
+                                  -Dsonar.host.url=${SONAR_HOST_URL} \
+                                  -Dsonar.login=${SONAR_TOKEN}
+                            """
+                        }
+
+                        if (env.RUN_MEDIA == 'true') {
+                            sh """
+                                ./mvnw -f ./pom.xml -pl ${MEDIA_MODULE} -am sonar:sonar \
+                                  -Dsonar.projectKey=yas_media \
+                                  -Dsonar.host.url=${SONAR_HOST_URL} \
+                                  -Dsonar.login=${SONAR_TOKEN}
+                            """
+                        }
+                    }
                 }
             }
         }
