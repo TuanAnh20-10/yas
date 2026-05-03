@@ -11,7 +11,7 @@ pipeline {
         MEDIA_MODULE = 'media'
 
         SONAR_PROJECT_KEY = 'yas_project'
-        SONAR_HOST_URL = 'https://everglade-starfish-fable.ngrok-free.dev/'
+        SONAR_HOST_URL = 'https://fool-food-cornbread.ngrok-free.dev/'
     }
 
     options {
@@ -165,18 +165,17 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     script {
-                        def runSonarForModule = { workspaceSuffix, moduleName, sonarKey ->
+                        def runSonarForModule = { workspaceSuffix, moduleName ->
                             ws("${env.WORKSPACE}@${workspaceSuffix}") {
                                 withEnv([
-                                    "MODULE_NAME=${moduleName}",
-                                    "SONAR_KEY=${sonarKey}"
+                                    "MODULE_NAME=${moduleName}"
                                 ]) {
                                     sh 'chmod +x mvnw || true'
                                     sh '''
                                         ./mvnw -U -f ./pom.xml -pl common-library,$MODULE_NAME -am install -DskipTests
                                         ./mvnw -U -f ./$MODULE_NAME/pom.xml \
                                           org.sonarsource.scanner.maven:sonar-maven-plugin:4.0.0.4121:sonar \
-                                          -Dsonar.projectKey=$SONAR_KEY \
+                                          -Dsonar.projectKey=$SONAR_PROJECT_KEY \
                                           -Dsonar.host.url=$SONAR_HOST_URL \
                                           -Dsonar.login=$SONAR_TOKEN \
                                           -Dsonar.java.binaries=target/classes \
@@ -187,15 +186,15 @@ pipeline {
                         }
 
                         if (env.RUN_CART == 'true') {
-                            runSonarForModule('test-cart', env.CART_MODULE, 'yas_cart')
+                            runSonarForModule('test-cart', env.CART_MODULE)
                         }
 
                         if (env.RUN_PRODUCT == 'true') {
-                            runSonarForModule('test-product', env.PRODUCT_MODULE, 'yas_product')
+                            runSonarForModule('test-product', env.PRODUCT_MODULE)
                         }
 
                         if (env.RUN_MEDIA == 'true') {
-                            runSonarForModule('test-media', env.MEDIA_MODULE, 'yas_media')
+                            runSonarForModule('test-media', env.MEDIA_MODULE)
                         }
                     }
                 }
