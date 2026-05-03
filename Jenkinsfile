@@ -12,7 +12,7 @@ pipeline {
 
         // ====== SONAR ======
         SONAR_PROJECT_KEY = 'yas_project'
-        SONAR_HOST_URL = 'https://everglade-starfish-fable.ngrok-free.dev'
+        SONAR_HOST_URL = 'https://everglade-starfish-fable.ngrok-free.dev/'
     }
 
     options {
