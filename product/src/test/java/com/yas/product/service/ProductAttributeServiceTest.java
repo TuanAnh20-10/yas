@@ -6,11 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
+import com.yas.commonlibrary.exception.BadRequestException;
 import com.yas.commonlibrary.exception.DuplicatedException;
+import com.yas.commonlibrary.exception.NotFoundException;
 import com.yas.product.model.attribute.ProductAttribute;
 import com.yas.product.model.attribute.ProductAttributeGroup;
 import com.yas.product.repository.ProductAttributeGroupRepository;
 import com.yas.product.repository.ProductAttributeRepository;
+import com.yas.product.utils.Constants;
 import com.yas.product.viewmodel.productattribute.ProductAttributeListGetVm;
 import com.yas.product.viewmodel.productattribute.ProductAttributePostVm;
 import java.util.ArrayList;
@@ -144,5 +147,46 @@ class ProductAttributeServiceTest {
 
         ProductAttributePostVm vm = new ProductAttributePostVm("Duplicate Name", null);
         assertThrows(DuplicatedException.class, () -> productAttributeService.update(vm, 1L));
+    }
+
+    @Test
+    void test_save_product_attribute_with_non_existent_group_id() {
+        when(productAttributeGroupRepository.findById(99L)).thenReturn(Optional.empty());
+
+        ProductAttributePostVm vm = new ProductAttributePostVm("New Attribute", 99L);
+
+        BadRequestException exception = assertThrows(BadRequestException.class,
+                () -> productAttributeService.save(vm));
+
+        assertEquals(String.format(Constants.ErrorCode.PRODUCT_ATTRIBUTE_GROUP_NOT_FOUND, 99L),
+                exception.getMessage());
+    }
+
+    @Test
+    void test_update_product_attribute_when_attribute_not_found() {
+        when(productAttributeRepository.findById(99L)).thenReturn(Optional.empty());
+
+        ProductAttributePostVm vm = new ProductAttributePostVm("Updated Attribute", null);
+
+        NotFoundException exception = assertThrows(NotFoundException.class,
+                () -> productAttributeService.update(vm, 99L));
+
+        assertEquals(String.format(Constants.ErrorCode.PRODUCT_ATTRIBUTE_NOT_FOUND, 99L),
+                exception.getMessage());
+    }
+
+    @Test
+    void test_update_product_attribute_with_non_existent_group_id() {
+        ProductAttribute existingAttr = new ProductAttribute(1L, "Old Attribute", null, null, null);
+        when(productAttributeRepository.findById(1L)).thenReturn(Optional.of(existingAttr));
+        when(productAttributeGroupRepository.findById(99L)).thenReturn(Optional.empty());
+
+        ProductAttributePostVm vm = new ProductAttributePostVm("Updated Attribute", 99L);
+
+        BadRequestException exception = assertThrows(BadRequestException.class,
+                () -> productAttributeService.update(vm, 1L));
+
+        assertEquals(String.format(Constants.ErrorCode.PRODUCT_ATTRIBUTE_GROUP_NOT_FOUND, 99L),
+                exception.getMessage());
     }
 }
