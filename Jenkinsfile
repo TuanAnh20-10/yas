@@ -150,31 +150,37 @@ pipeline {
                     // Publish coverage in Jenkins UI + fail/mark UNSTABLE if below threshold.
                     // Requires the JaCoCo Jenkins plugin.
                     if (env.RUN_CART == 'true') {
-                        jacoco(
-                            execPattern: "${env.WORKSPACE}@test-cart/${CART_MODULE}/target/jacoco.exec",
-                            classPattern: "${env.WORKSPACE}@test-cart/${CART_MODULE}/target/classes",
-                            sourcePattern: "${env.WORKSPACE}@test-cart/${CART_MODULE}/src/main/java",
-                            minimumLineCoverage: "${env.COVERAGE_MIN}",
-                            changeBuildStatus: true
-                        )
+                        ws("${env.WORKSPACE}@test-cart") {
+                            jacoco(
+                                execPattern: "${CART_MODULE}/target/jacoco.exec",
+                                classPattern: "${CART_MODULE}/target/classes",
+                                sourcePattern: "${CART_MODULE}/src/main/java",
+                                minimumLineCoverage: "${env.COVERAGE_MIN}",
+                                changeBuildStatus: true
+                            )
+                        }
                     }
                     if (env.RUN_PRODUCT == 'true') {
-                        jacoco(
-                            execPattern: "${env.WORKSPACE}@test-product/${PRODUCT_MODULE}/target/jacoco.exec",
-                            classPattern: "${env.WORKSPACE}@test-product/${PRODUCT_MODULE}/target/classes",
-                            sourcePattern: "${env.WORKSPACE}@test-product/${PRODUCT_MODULE}/src/main/java",
-                            minimumLineCoverage: "${env.COVERAGE_MIN}",
-                            changeBuildStatus: true
-                        )
+                        ws("${env.WORKSPACE}@test-product") {
+                            jacoco(
+                                execPattern: "${PRODUCT_MODULE}/target/jacoco.exec",
+                                classPattern: "${PRODUCT_MODULE}/target/classes",
+                                sourcePattern: "${PRODUCT_MODULE}/src/main/java",
+                                minimumLineCoverage: "${env.COVERAGE_MIN}",
+                                changeBuildStatus: true
+                            )
+                        }
                     }
                     if (env.RUN_MEDIA == 'true') {
-                        jacoco(
-                            execPattern: "${env.WORKSPACE}@test-media/${MEDIA_MODULE}/target/jacoco.exec",
-                            classPattern: "${env.WORKSPACE}@test-media/${MEDIA_MODULE}/target/classes",
-                            sourcePattern: "${env.WORKSPACE}@test-media/${MEDIA_MODULE}/src/main/java",
-                            minimumLineCoverage: "${env.COVERAGE_MIN}",
-                            changeBuildStatus: true
-                        )
+                        ws("${env.WORKSPACE}@test-media") {
+                            jacoco(
+                                execPattern: "${MEDIA_MODULE}/target/jacoco.exec",
+                                classPattern: "${MEDIA_MODULE}/target/classes",
+                                sourcePattern: "${MEDIA_MODULE}/src/main/java",
+                                minimumLineCoverage: "${env.COVERAGE_MIN}",
+                                changeBuildStatus: true
+                            )
+                        }
                     }
                 }
             }
