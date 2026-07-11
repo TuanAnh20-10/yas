@@ -12,6 +12,9 @@ pipeline {
 
         SONAR_PROJECT_KEY = 'yas_project'
         SONAR_HOST_URL = 'https://fool-food-cornbread.ngrok-free.dev/'
+
+        // Coverage gate threshold (line coverage), 0.70 = 70%
+        COVERAGE_MIN = '0.70'
     }
 
     options {
@@ -20,6 +23,7 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 deleteDir()
@@ -52,13 +56,10 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    echo "Changed files:\\n${changedFiles}"
+                    echo "Changed files:\n${changedFiles}"
 
                     def runAll = false
-
-                    if (!changedFiles) {
-                        runAll = true
-                    }
+                    if (!changedFiles) { runAll = true }
 
                     if (changedFiles.contains('Jenkinsfile') ||
                         changedFiles.contains('jenkinsfile') ||
@@ -83,81 +84,106 @@ pipeline {
             steps {
                 sh '''
                     if command -v gitleaks >/dev/null 2>&1; then
-                        gitleaks protect --source . -v
+                        gitleaks detect --source . --no-git -v --report-format json --report-path gitleaks-report.json || \
+                        (echo "Gitleaks found leaked secrets" && exit 1)
                     else
                         echo "ERROR: gitleaks chua duoc cai tren Jenkins node"
                         exit 1
                     fi
                 '''
             }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'gitleaks-report.json', allowEmptyArchive: true
+                }
+            }
         }
 
         stage('Unit Test') {
             parallel {
                 stage('Test Cart') {
-                    when {
-                        expression { env.RUN_CART == 'true' }
-                    }
+                    when { expression { env.RUN_CART == 'true' } }
                     steps {
                         ws("${env.WORKSPACE}@test-cart") {
                             checkout scm
                             sh 'chmod +x mvnw || true'
-                            sh "./mvnw -f ./pom.xml -pl ${CART_MODULE} -am test"
-                            junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
-                            archiveArtifacts artifacts: '**/target/site/**, **/target/jacoco*.exec', allowEmptyArchive: true
+                            // jacoco:report generates target/site/jacoco/jacoco.xml + jacoco.exec
+                            // requires jacoco-maven-plugin (prepare-agent + report) bound in pom.xml
+                            sh "./mvnw -f ./pom.xml -pl ${CART_MODULE} -am test jacoco:report"
+                            junit allowEmptyResults: true, testResults: "${CART_MODULE}/target/surefire-reports/*.xml"
+                            archiveArtifacts artifacts: "${CART_MODULE}/target/site/jacoco/**, ${CART_MODULE}/target/jacoco.exec", allowEmptyArchive: true
                         }
                     }
                 }
 
                 stage('Test Product') {
-                    when {
-                        expression { env.RUN_PRODUCT == 'true' }
-                    }
+                    when { expression { env.RUN_PRODUCT == 'true' } }
                     steps {
                         ws("${env.WORKSPACE}@test-product") {
                             checkout scm
                             sh 'chmod +x mvnw || true'
-                            sh "./mvnw -f ./pom.xml -pl ${PRODUCT_MODULE} -am test"
-                            junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
-                            archiveArtifacts artifacts: '**/target/site/**, **/target/jacoco*.exec', allowEmptyArchive: true
+                            sh "./mvnw -f ./pom.xml -pl ${PRODUCT_MODULE} -am test jacoco:report"
+                            junit allowEmptyResults: true, testResults: "${PRODUCT_MODULE}/target/surefire-reports/*.xml"
+                            archiveArtifacts artifacts: "${PRODUCT_MODULE}/target/site/jacoco/**, ${PRODUCT_MODULE}/target/jacoco.exec", allowEmptyArchive: true
                         }
                     }
                 }
 
                 stage('Test Media') {
-                    when {
-                        expression { env.RUN_MEDIA == 'true' }
-                    }
+                    when { expression { env.RUN_MEDIA == 'true' } }
                     steps {
                         ws("${env.WORKSPACE}@test-media") {
                             checkout scm
                             sh 'chmod +x mvnw || true'
-                            sh "./mvnw -f ./pom.xml -pl ${MEDIA_MODULE} -am test"
-                            junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
-                            archiveArtifacts artifacts: '**/target/site/**, **/target/jacoco*.exec', allowEmptyArchive: true
+                            sh "./mvnw -f ./pom.xml -pl ${MEDIA_MODULE} -am test jacoco:report"
+                            junit allowEmptyResults: true, testResults: "${MEDIA_MODULE}/target/surefire-reports/*.xml"
+                            archiveArtifacts artifacts: "${MEDIA_MODULE}/target/site/jacoco/**, ${MEDIA_MODULE}/target/jacoco.exec", allowEmptyArchive: true
                         }
                     }
                 }
             }
         }
 
-        stage('Coverage Check') {
+        stage('Coverage Report & Gate (>= 70%)') {
             steps {
-                sh '''
-                    echo "Checking JaCoCo reports..."
-
-                    if [ "${RUN_CART}" = "true" ]; then
-                      find "${WORKSPACE}@test-cart" -type f | grep -E 'jacoco.*xml|jacoco.*csv|jacoco.*html' || true
-                    fi
-
-                    if [ "${RUN_PRODUCT}" = "true" ]; then
-                      find "${WORKSPACE}@test-product" -type f | grep -E 'jacoco.*xml|jacoco.*csv|jacoco.*html' || true
-                    fi
-
-                    if [ "${RUN_MEDIA}" = "true" ]; then
-                      find "${WORKSPACE}@test-media" -type f | grep -E 'jacoco.*xml|jacoco.*csv|jacoco.*html' || true
-                    fi
-                '''
+                script {
+                    // Publish coverage in Jenkins UI + fail/mark UNSTABLE if below threshold.
+                    // Requires the JaCoCo Jenkins plugin.
+                    if (env.RUN_CART == 'true') {
+                        jacoco(
+                            execPattern: "${env.WORKSPACE}@test-cart/${CART_MODULE}/target/jacoco.exec",
+                            classPattern: "${env.WORKSPACE}@test-cart/${CART_MODULE}/target/classes",
+                            sourcePattern: "${env.WORKSPACE}@test-cart/${CART_MODULE}/src/main/java",
+                            minimumLineCoverage: "${env.COVERAGE_MIN}",
+                            changeBuildStatus: true
+                        )
+                    }
+                    if (env.RUN_PRODUCT == 'true') {
+                        jacoco(
+                            execPattern: "${env.WORKSPACE}@test-product/${PRODUCT_MODULE}/target/jacoco.exec",
+                            classPattern: "${env.WORKSPACE}@test-product/${PRODUCT_MODULE}/target/classes",
+                            sourcePattern: "${env.WORKSPACE}@test-product/${PRODUCT_MODULE}/src/main/java",
+                            minimumLineCoverage: "${env.COVERAGE_MIN}",
+                            changeBuildStatus: true
+                        )
+                    }
+                    if (env.RUN_MEDIA == 'true') {
+                        jacoco(
+                            execPattern: "${env.WORKSPACE}@test-media/${MEDIA_MODULE}/target/jacoco.exec",
+                            classPattern: "${env.WORKSPACE}@test-media/${MEDIA_MODULE}/target/classes",
+                            sourcePattern: "${env.WORKSPACE}@test-media/${MEDIA_MODULE}/src/main/java",
+                            minimumLineCoverage: "${env.COVERAGE_MIN}",
+                            changeBuildStatus: true
+                        )
+                    }
+                }
+            }
+            post {
+                unstable {
+                    script {
+                        error("Coverage below ${env.COVERAGE_MIN} threshold - failing pipeline")
+                    }
+                }
             }
         }
 
@@ -167,9 +193,7 @@ pipeline {
                     script {
                         def runSonarForModule = { workspaceSuffix, moduleName ->
                             ws("${env.WORKSPACE}@${workspaceSuffix}") {
-                                withEnv([
-                                    "MODULE_NAME=${moduleName}"
-                                ]) {
+                                withEnv(["MODULE_NAME=${moduleName}"]) {
                                     sh 'chmod +x mvnw || true'
                                     sh '''
                                         ./mvnw -U -f ./pom.xml -pl common-library,$MODULE_NAME -am install -DskipTests
@@ -185,17 +209,35 @@ pipeline {
                             }
                         }
 
-                        if (env.RUN_CART == 'true') {
-                            runSonarForModule('test-cart', env.CART_MODULE)
+                        if (env.RUN_CART == 'true')    { runSonarForModule('test-cart', env.CART_MODULE) }
+                        if (env.RUN_PRODUCT == 'true') { runSonarForModule('test-product', env.PRODUCT_MODULE) }
+                        if (env.RUN_MEDIA == 'true')   { runSonarForModule('test-media', env.MEDIA_MODULE) }
+                    }
+                }
+            }
+        }
+
+        stage('Dependency & Code Scan - Snyk') {
+            steps {
+                withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
+                    script {
+                        def runSnykForModule = { workspaceSuffix, moduleName ->
+                            ws("${env.WORKSPACE}@${workspaceSuffix}") {
+                                sh """
+                                    if ! command -v snyk >/dev/null 2>&1; then
+                                        npm install -g snyk
+                                    fi
+                                    snyk auth \$SNYK_TOKEN
+                                    snyk test --file=${moduleName}/pom.xml --severity-threshold=high --json-file-output=${moduleName}-snyk-report.json || \
+                                    (echo "Snyk found high/critical vulnerabilities in ${moduleName}" && exit 1)
+                                """
+                                archiveArtifacts artifacts: "${moduleName}-snyk-report.json", allowEmptyArchive: true
+                            }
                         }
 
-                        if (env.RUN_PRODUCT == 'true') {
-                            runSonarForModule('test-product', env.PRODUCT_MODULE)
-                        }
-
-                        if (env.RUN_MEDIA == 'true') {
-                            runSonarForModule('test-media', env.MEDIA_MODULE)
-                        }
+                        if (env.RUN_CART == 'true')    { runSnykForModule('test-cart', env.CART_MODULE) }
+                        if (env.RUN_PRODUCT == 'true') { runSnykForModule('test-product', env.PRODUCT_MODULE) }
+                        if (env.RUN_MEDIA == 'true')   { runSnykForModule('test-media', env.MEDIA_MODULE) }
                     }
                 }
             }
@@ -204,9 +246,7 @@ pipeline {
         stage('Build') {
             parallel {
                 stage('Build Cart') {
-                    when {
-                        expression { env.RUN_CART == 'true' }
-                    }
+                    when { expression { env.RUN_CART == 'true' } }
                     steps {
                         ws("${env.WORKSPACE}@build-cart") {
                             checkout scm
@@ -218,9 +258,7 @@ pipeline {
                 }
 
                 stage('Build Product') {
-                    when {
-                        expression { env.RUN_PRODUCT == 'true' }
-                    }
+                    when { expression { env.RUN_PRODUCT == 'true' } }
                     steps {
                         ws("${env.WORKSPACE}@build-product") {
                             checkout scm
@@ -232,9 +270,7 @@ pipeline {
                 }
 
                 stage('Build Media') {
-                    when {
-                        expression { env.RUN_MEDIA == 'true' }
-                    }
+                    when { expression { env.RUN_MEDIA == 'true' } }
                     steps {
                         ws("${env.WORKSPACE}@build-media") {
                             checkout scm
@@ -251,6 +287,9 @@ pipeline {
     post {
         success {
             echo 'Pipeline SUCCESS'
+        }
+        unstable {
+            echo 'Pipeline UNSTABLE - check coverage/scan reports'
         }
         failure {
             echo 'Pipeline FAILED'
