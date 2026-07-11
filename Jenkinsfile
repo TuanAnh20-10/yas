@@ -84,7 +84,7 @@ pipeline {
             steps {
                 sh '''
                     if command -v gitleaks >/dev/null 2>&1; then
-                        gitleaks detect --source . --no-git -v --report-format json --report-path gitleaks-report.json || \
+                        gitleaks detect --source . --no-git -v --config gitleaks.toml --report-format json --report-path gitleaks-report.json || \
                         (echo "Gitleaks found leaked secrets" && exit 1)
                     else
                         echo "ERROR: gitleaks chua duoc cai tren Jenkins node"
